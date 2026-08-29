@@ -2233,7 +2233,7 @@
   var today = function(){ return new Date().toISOString().slice(0,10); };
 
   /* ---------- persistence ---------- */
-  var LS = "cs-venue-board-v1";
+  var LS = "cs-venue-board-v2";
   function setChip(s, t){ var c=$("#savechip"); c.dataset.state=s; c.textContent=t; }
   function mirrorLocal(){ try{ localStorage.setItem(LS, JSON.stringify(state)); }catch(e){} }
 
@@ -2294,7 +2294,10 @@
           var raw = localStorage.getItem(LS);
           if (raw){
             var j = JSON.parse(raw);
-            if (j && Array.isArray(j.venues)){ if(!j.signals) j.signals=[]; state = j; }
+            // Only accept schema-compatible saved boards; stale/map-less
+            // state from older builds is discarded so the seed wins.
+            if (j && j.schema >= 2 && Array.isArray(j.venues)){ if(!j.signals) j.signals=[]; state = j; }
+            else { console.warn("cs-venue-board: discarding incompatible saved state"); }
           }
         }catch(e){}
       });
@@ -2664,7 +2667,7 @@
     if (!MAPS) return "";
     // Interactive MapLibre map when the CDN libs are present; the static SVG
     // map stays as a zero-dependency fallback (offline / CDN blocked).
-    if (typeof maplibregl !== "undefined" && typeof topojson !== "undefined") {
+    if (!svgForced && typeof maplibregl !== "undefined" && typeof topojson !== "undefined") {
       return '<div class="maphead">'+mapSwitcherHTML()+
         '<div class="maplegend">'+
           '<span><i class="lg client"></i>Existing client</span>'+
@@ -2790,6 +2793,7 @@
     na:     [[-165.0, 18.0], [-50.0, 55.0]]  // Hawaii → Newfoundland
   };
   var map = null, worldTopo = null, mapHoverId = null, mapReady = false, mapTipEl = null;
+  var svgForced = false, mapBuilding = false;
 
   // Country code -> ISO 3166-1 numeric id used by world-atlas features.
   var ISO_NUM = { UK:826, IE:372, NL:528, BE:56, DE:276, DK:208, SE:752, NO:578,
@@ -2805,13 +2809,21 @@
       if (map.getContainer().isConnected){ refreshMapData(); return; }
       disposeMap();
     }
+    // Guard against a second async build while one is already in flight.
+    if (mapBuilding) return;
     var status = $("#map-status");
     mapTipEl = $("#map-tip");
 
     if (!worldTopo){
+      mapBuilding = true;
       fetch(WORLD_TOPO_URL).then(function(r){ return r.ok ? r.json() : Promise.reject(new Error("topo")); })
-        .then(function(t){ worldTopo = t; buildMap(); })
-        .catch(function(){ if (status) status.textContent = "Geometry offline — SVG map shown below."; });
+        .then(function(t){ worldTopo = t; mapBuilding = false; buildMap(); })
+        .catch(function(){
+          mapBuilding = false;
+          if (status) status.textContent = "Geometry offline — SVG map shown below.";
+          svgForced = true;
+          if (ui.view === "territory") render();
+        });
     } else {
       buildMap();
     }
