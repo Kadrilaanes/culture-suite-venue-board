@@ -11,6 +11,18 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+<div class="gate" id="gate">
+  <div class="gate-card">
+    <div class="brandline">Culture Suite · Website licence pipeline</div>
+    <h1>Venue Board</h1>
+    <p class="sub">Private board — enter the access password to continue.</p>
+    <form id="gateform" autocomplete="off">
+      <input type="password" id="gatepw" placeholder="Password" aria-label="Password" required>
+      <button class="btn primary" type="submit">Unlock</button>
+    </form>
+    <p class="gate-err" id="gateerr" hidden>Incorrect password.</p>
+  </div>
+</div>
 <div class="wrap">
   <header class="marquee">
     <div>

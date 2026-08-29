@@ -51,6 +51,27 @@
   }
   .wrap{max-width:1180px;margin:0 auto;padding:0 18px 96px;}
 
+  /* ── access gate ── */
+  .gate{
+    position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;
+    background:var(--ground);padding:18px;
+  }
+  .gate.gone{display:none;}
+  .gate-card{
+    width:100%;max-width:420px;padding:34px 30px;border:1px solid var(--line);border-radius:14px;
+    background:var(--surface);box-shadow:0 20px 60px rgba(0,0,0,.16);
+  }
+  .gate-card h1{margin:6px 0 4px;font-family:var(--display);font-weight:400;font-size:34px;letter-spacing:-.01em;}
+  .gate-card .sub{margin:0 0 22px;color:var(--muted);font-size:13.5px;}
+  #gateform{display:flex;gap:10px;}
+  #gateform input{
+    flex:1;min-width:0;appearance:none;border:1px solid var(--line-2);border-radius:9px;
+    background:var(--surface);color:var(--ink);padding:9px 12px;font-size:14.5px;font-family:var(--mono);
+  }
+  #gateform input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent);}
+  .gate-err{color:var(--accent);font-size:13px;margin:12px 0 0;font-family:var(--mono);}
+
+
   header.marquee{
     padding:28px 0 14px;
     display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;justify-content:space-between;
@@ -297,6 +318,18 @@
 </style>
 </head>
 <body>
+<div class="gate" id="gate">
+  <div class="gate-card">
+    <div class="brandline">Culture Suite · Website licence pipeline</div>
+    <h1>Venue Board</h1>
+    <p class="sub">Private board — enter the access password to continue.</p>
+    <form id="gateform" autocomplete="off">
+      <input type="password" id="gatepw" placeholder="Password" aria-label="Password" required>
+      <button class="btn primary" type="submit">Unlock</button>
+    </form>
+    <p class="gate-err" id="gateerr" hidden>Incorrect password.</p>
+  </div>
+</div>
 <div class="wrap">
   <header class="marquee">
     <div>
@@ -2135,6 +2168,58 @@
 (function(){
   "use strict";
 
+  /* ---------- access gate ---------- */
+  var GATE_HASH = "e6d097ea7cb58224ba8c85145302187cd932fc3afad152be8c89b3c8747e7ca9"; // SHA-256 of access password
+  var GATE_LS = "cs-venue-board-unlock";
+
+  function sha256(str){
+    if (window.crypto && crypto.subtle){
+      return crypto.subtle.digest("SHA-256", new TextEncoder().encode(str)).then(function(buf){
+        return Array.from(new Uint8Array(buf)).map(function(b){ return b.toString(16).padStart(2,"0"); }).join("");
+      });
+    }
+    return Promise.reject(new Error("no-crypto"));
+  }
+
+  function unlockGate(){
+    try{ sessionStorage.setItem(GATE_LS, "1"); }catch(e){}
+    var g = document.getElementById("gate");
+    if (g){ g.classList.add("gone"); }
+    document.body.dataset.locked = "0";
+    boot();
+  }
+
+  function lockGate(){
+    var g = document.getElementById("gate");
+    if (g){ g.classList.remove("gone"); }
+    document.body.dataset.locked = "1";
+    var form = document.getElementById("gateform");
+    if (form){
+      form.addEventListener("submit", function(ev){
+        ev.preventDefault();
+        var pw = document.getElementById("gatepw").value || "";
+        var err = document.getElementById("gateerr");
+        sha256(pw).then(function(h){
+          if (h === GATE_HASH){ if(err){err.hidden=true;} unlockGate(); }
+          else { if(err){err.hidden=false;} }
+        }).catch(function(){
+          // No WebCrypto: fall back to plain comparison (still obfuscated, not secure)
+          if (pw === GATE_HASH){ if(err){err.hidden=true;} unlockGate(); }
+          else { if(err){err.hidden=false;} }
+        });
+      });
+    }
+    var input = document.getElementById("gatepw");
+    if (input){ input.focus(); }
+  }
+
+  function gate(){
+    var unlocked = false;
+    try{ unlocked = sessionStorage.getItem(GATE_LS) === "1"; }catch(e){}
+    if (unlocked){ boot(); return; }
+    lockGate();
+  }
+
   var STAGES = [
     {k:"identified",  n:"Identified",  p:0.05, c:"#8E8397", bg:"rgba(142,131,151,.12)"},
     {k:"contacted",   n:"Contacted",   p:0.10, c:"#6C7FA8", bg:"rgba(108,127,168,.14)"},
@@ -2867,7 +2952,7 @@
     if (el) el.scrollIntoView({block:"center", behavior:"smooth"});
   });
 
-  boot();
+  gate();
 })();
 </script>
 </body>

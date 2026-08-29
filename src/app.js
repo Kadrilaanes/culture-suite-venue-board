@@ -1,6 +1,58 @@
 (function(){
   "use strict";
 
+  /* ---------- access gate ---------- */
+  var GATE_HASH = "e6d097ea7cb58224ba8c85145302187cd932fc3afad152be8c89b3c8747e7ca9"; // SHA-256 of access password
+  var GATE_LS = "cs-venue-board-unlock";
+
+  function sha256(str){
+    if (window.crypto && crypto.subtle){
+      return crypto.subtle.digest("SHA-256", new TextEncoder().encode(str)).then(function(buf){
+        return Array.from(new Uint8Array(buf)).map(function(b){ return b.toString(16).padStart(2,"0"); }).join("");
+      });
+    }
+    return Promise.reject(new Error("no-crypto"));
+  }
+
+  function unlockGate(){
+    try{ sessionStorage.setItem(GATE_LS, "1"); }catch(e){}
+    var g = document.getElementById("gate");
+    if (g){ g.classList.add("gone"); }
+    document.body.dataset.locked = "0";
+    boot();
+  }
+
+  function lockGate(){
+    var g = document.getElementById("gate");
+    if (g){ g.classList.remove("gone"); }
+    document.body.dataset.locked = "1";
+    var form = document.getElementById("gateform");
+    if (form){
+      form.addEventListener("submit", function(ev){
+        ev.preventDefault();
+        var pw = document.getElementById("gatepw").value || "";
+        var err = document.getElementById("gateerr");
+        sha256(pw).then(function(h){
+          if (h === GATE_HASH){ if(err){err.hidden=true;} unlockGate(); }
+          else { if(err){err.hidden=false;} }
+        }).catch(function(){
+          // No WebCrypto: fall back to plain comparison (still obfuscated, not secure)
+          if (pw === GATE_HASH){ if(err){err.hidden=true;} unlockGate(); }
+          else { if(err){err.hidden=false;} }
+        });
+      });
+    }
+    var input = document.getElementById("gatepw");
+    if (input){ input.focus(); }
+  }
+
+  function gate(){
+    var unlocked = false;
+    try{ unlocked = sessionStorage.getItem(GATE_LS) === "1"; }catch(e){}
+    if (unlocked){ boot(); return; }
+    lockGate();
+  }
+
   var STAGES = [
     {k:"identified",  n:"Identified",  p:0.05, c:"#8E8397", bg:"rgba(142,131,151,.12)"},
     {k:"contacted",   n:"Contacted",   p:0.10, c:"#6C7FA8", bg:"rgba(108,127,168,.14)"},
@@ -733,5 +785,5 @@
     if (el) el.scrollIntoView({block:"center", behavior:"smooth"});
   });
 
-  boot();
+  gate();
 })();
