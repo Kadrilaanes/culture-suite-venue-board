@@ -345,6 +345,7 @@
       <p class="sub">Every venue we can put a Culture Suite website licence in front of — the universe, the live deals, the fifteen to move this month, and everything we've heard.</p>
     </div>
     <div class="headtools">
+      <button class="btn" id="theme" aria-label="Toggle light/dark theme" title="Toggle theme">◐</button>
       <span class="chip" id="savechip" data-state="idle">Loading</span>
       <button class="btn" id="csv" hidden>Export CSV</button>
       <button class="btn primary" id="add">+ Venue</button>
@@ -2197,8 +2198,28 @@
 
 
   var state = {schema:2, updatedAt:null, venues:[], signals:[]};
-  var ui = {view:"venues", q:"", seg:"", reg:"", stage:"", sort:"stage", open:{}, terr:{}, map:"europe", sel:null};
+  var ui = {view:"territory", q:"", seg:"", reg:"", stage:"", sort:"stage", open:{}, terr:{}, map:"europe", sel:null};
   var api = null, saveTimer = null, readOnly = false, filesOK = true;
+
+  /* ---------- theme ---------- */
+  function applyTheme(){
+    var saved = null;
+    try { saved = localStorage.getItem("cs-venue-board-theme"); } catch(e){}
+    if (saved === "light" || saved === "dark"){
+      document.documentElement.dataset.theme = saved;
+    } else {
+      delete document.documentElement.dataset.theme; // follow system preference
+    }
+  }
+  function toggleTheme(){
+    var cur = document.documentElement.dataset.theme || (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    var next = cur === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("cs-venue-board-theme", next); } catch(e){}
+    // The MapLibre colours are resolved from CSS vars at build time — rebuild
+    // so the map follows the theme change.
+    if (ui.view === "territory"){ disposeMap(); render(); }
+  }
 
   var $ = function(s){ return document.querySelector(s); };
   var cssVar = function(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim() || "#1D1822"; };
@@ -2250,6 +2271,9 @@
   }
 
   function boot(){
+    applyTheme();
+    var tb = $("#theme");
+    if (tb) tb.addEventListener("click", toggleTheme);
     render();
     Promise.all([
       getJSON("data/maps.json").catch(function(){ return null; }),
@@ -2993,12 +3017,12 @@
 
   /* ---------- shell ---------- */
   var VIEWS = [
+    {k:"territory",n:"Territory",      f:viewTerritory, count:function(){
+      var s={}; state.venues.forEach(function(x){ s[x.region]=1; }); return Object.keys(s).length; }},
     {k:"venues",   n:"Venues",         f:viewVenues,    count:function(){ return state.venues.length; }},
     {k:"leads",    n:"Leads",          f:viewLeads,     count:function(){ return state.venues.filter(function(x){return LIVE[x.stage];}).length; }},
     {k:"priority", n:"Priority Board", f:viewPriority,  count:function(){ return Math.min(15, state.venues.length); }},
-    {k:"intel",    n:"Intel Feed",     f:viewIntel,     count:function(){ return state.signals.length; }},
-    {k:"territory",n:"Territory",      f:viewTerritory, count:function(){
-      var s={}; state.venues.forEach(function(x){ s[x.region]=1; }); return Object.keys(s).length; }}
+    {k:"intel",    n:"Intel Feed",     f:viewIntel,     count:function(){ return state.signals.length; }}
   ];
 
   function renderTabs(){
