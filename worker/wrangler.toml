@@ -1,0 +1,12 @@
+name = "culture-suite-venue-board-gate"
+main = "src/index.js"
+compatibility_date = "2025-04-01"
+account_id = "b3a5b3d8f1c772bb8e1e23725f79b979"
+
+# Serve the static app from dist/ via the Assets binding, but only after the
+# Worker has verified the session cookie (run_worker_first = true).
+[assets]
+directory = "../dist"
+binding = "ASSETS"
+run_worker_first = true
+not_found_handling = "none"

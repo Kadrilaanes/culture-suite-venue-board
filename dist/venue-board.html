@@ -8,6 +8,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
 <style>
   :root{
     --ground:#FAF8F9; --surface:#FFFFFF; --surface-2:#F2EEF1;
@@ -260,7 +263,24 @@
   .maplegend span{display:flex;align-items:center;gap:6px;}
   .maplegend .lg{width:9px;height:9px;border-radius:50%;background:var(--line-2);border:1px solid var(--muted);display:block;}
   .maplegend .lg.client{background:var(--accent);border-color:var(--accent);}
-  .mapbox{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px;overflow:hidden;margin:0 auto;}
+  .mapbox{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px;overflow:hidden;margin:0 auto;position:relative;}
+  .maplibregl-map{font-family:var(--sans);}
+  #interactive-map{width:100%;height:440px;border-radius:8px;overflow:hidden;}
+  @media (max-width:640px){ #interactive-map{height:360px;} }
+  .maplibregl-canvas:focus{outline:none;}
+  .maplibregl-ctrl-attrib{font-family:var(--mono);font-size:9px!important;}
+  .maplibregl-ctrl-group{background:var(--surface)!important;border:1px solid var(--line-2)!important;}
+  .maplibregl-ctrl-group button{background:transparent!important;}
+  .maplibregl-ctrl-group button span{filter:invert(0.5);}
+  #map-tip{
+    position:absolute;z-index:5;pointer-events:none;display:none;
+    background:var(--surface);border:1px solid var(--line-2);border-radius:8px;
+    box-shadow:var(--shadow);padding:8px 10px;min-width:150px;max-width:240px;
+    font-family:var(--mono);font-size:11px;line-height:1.45;color:var(--ink-2);
+  }
+  #map-tip b{display:block;color:var(--ink);font-family:var(--sans);font-size:12.5px;margin-bottom:2px;}
+  #map-tip .t{display:inline-block;margin-top:3px;padding:1px 7px;border-radius:999px;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;}
+  .map-status{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-top:8px;text-align:center;}
   svg.map{display:block;width:100%;height:auto;}
   svg.map .cty{fill:var(--map-off);stroke:var(--map-line);stroke-width:.7;vector-effect:non-scaling-stroke;}
   svg.map .cty.on{fill:var(--map-on);stroke:var(--map-line);}
@@ -2161,6 +2181,7 @@
   var api = null, saveTimer = null, readOnly = false, filesOK = true;
 
   var $ = function(s){ return document.querySelector(s); };
+  var cssVar = function(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim() || "#1D1822"; };
   var esc = function(s){
     return String(s==null?"":s).replace(/[&<>"']/g, function(c){
       return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
@@ -2597,6 +2618,48 @@
 
   function mapHTML(){
     if (!MAPS) return "";
+    // Interactive MapLibre map when the CDN libs are present; the static SVG
+    // map stays as a zero-dependency fallback (offline / CDN blocked).
+    if (typeof maplibregl !== "undefined" && typeof topojson !== "undefined") {
+      return '<div class="maphead">'+mapSwitcherHTML()+
+        '<div class="maplegend">'+
+          '<span><i class="lg client"></i>Existing client</span>'+
+          '<span><i class="lg"></i>Net-new prospect</span>'+
+          '<span class="lgsize">Dot size = venue scale</span>'+
+        '</div></div>'+
+        '<div class="mapbox" id="imapbox"><div id="interactive-map"></div>'+
+        '<div id="map-tip"></div></div>'+
+        '<p class="map-status" id="map-status">Loading map…</p>'+
+        '<div id="mapcallout">'+mapCalloutHTML()+'</div>'+
+        (offmapCount() ? '<p class="offmap">'+offmapCount()+' venue'+(offmapCount()===1?"":"s")+
+          ' not on the map yet — add a latitude and longitude on the venue to place '+(offmapCount()===1?"it":"them")+'.</p>' : "");
+    }
+    return svgMapHTML();
+  }
+
+  function offmapCount(){
+    return state.venues.filter(function(x){ return x.lat==null || x.lon==null; }).length;
+  }
+  function mapSwitcherHTML(){
+    var keys = Object.keys(MAPS).filter(function(k){ return state.venues.some(function(x){ return mapOf(x)===k; }); });
+    if (keys.length<2) return "";
+    return '<div class="mapswitch">'+keys.map(function(k){
+      var n = state.venues.filter(function(x){ return mapOf(x)===k; }).length;
+      return '<button type="button" class="btn mini" data-map="'+k+'" aria-pressed="'+(ui.map===k)+'">'+
+        esc(MAPMETA[k].n)+' <span class="n">'+n+'</span></button>';
+    }).join("")+'</div>';
+  }
+  function mapCalloutHTML(){
+    var sel = ui.sel ? find(ui.sel) : null;
+    if (!sel) return "";
+    var st = STAGEMAP[sel.stage]||STAGES[0];
+    return '<div class="callout" style="--stage-c:'+st.c+'">'+
+      '<div><b>'+esc(sel.name)+'</b><span>'+esc(sel.cls+" · "+sel.city+", "+sel.country)+'</span></div>'+
+      '<div class="callout-r"><span class="stage-pill" style="--stage-bg:'+st.bg+'">'+esc(st.n)+'</span>'+
+      '<b class="cmoney">'+esc(money(sel.value))+'</b></div></div>';
+  }
+
+  function svgMapHTML(){
     var placed = {europe:[], na:[]}, offmap = [];
     state.venues.forEach(function(x){
       var k = mapOf(x);
@@ -2659,16 +2722,6 @@
         esc(MAPMETA[k].n)+' <span class="n">'+placed[k].length+'</span></button>';
     }).join("")+'</div>' : "";
 
-    var sel = ui.sel ? find(ui.sel) : null;
-    var callout = "";
-    if (sel){
-      var st = STAGEMAP[sel.stage]||STAGES[0];
-      callout = '<div class="callout" style="--stage-c:'+st.c+'">'+
-        '<div><b>'+esc(sel.name)+'</b><span>'+esc(sel.cls+" · "+sel.city+", "+sel.country)+'</span></div>'+
-        '<div class="callout-r"><span class="stage-pill" style="--stage-bg:'+st.bg+'">'+esc(st.n)+'</span>'+
-        '<b class="cmoney">'+esc(money(sel.value))+'</b></div></div>';
-    }
-
     var cap = Math.round(560 * m.w / m.h);
     return '<div class="maphead">'+switcher+
       '<div class="maplegend">'+
@@ -2679,9 +2732,211 @@
       '<div class="mapbox" style="max-width:min(100%,'+cap+'px)"><svg class="map" viewBox="0 0 '+m.w+' '+m.h+'" role="img" '+
         'aria-label="Venue locations across '+esc(MAPMETA[ui.map].n)+'">'+
         '<g class="land">'+land+'</g><g class="pins">'+pins+'</g></svg></div>'+
-      callout+
+      mapCalloutHTML()+
       (offmap.length ? '<p class="offmap">'+offmap.length+' venue'+(offmap.length===1?"":"s")+
         ' not on the map yet — add a latitude and longitude on the venue to place '+(offmap.length===1?"it":"them")+'.</p>' : "");
+  }
+
+  /* ---------- interactive map (MapLibre GL) ---------- */
+  // Loaded once, reused across Territory re-renders. When the CDN geometry is
+  // unreachable we fall back to the static SVG map rendered by svgMapHTML().
+  var WORLD_TOPO_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json";
+  var REGION_BOUNDS = {
+    europe: [[-24.5, 34.0], [27.0, 66.5]],   // Reykjavík → Vilnius
+    na:     [[-165.0, 18.0], [-50.0, 55.0]]  // Hawaii → Newfoundland
+  };
+  var map = null, worldTopo = null, mapHoverId = null, mapReady = false, mapTipEl = null;
+
+  // Country code -> ISO 3166-1 numeric id used by world-atlas features.
+  var ISO_NUM = { UK:826, IE:372, NL:528, BE:56, DE:276, DK:208, SE:752, NO:578,
+    FI:246, IS:352, EE:233, LV:428, LT:440, US:840 };
+
+  function initInteractiveMap(){
+    var el = $("#interactive-map");
+    if (!el) return;
+    if (typeof maplibregl === "undefined") return;
+    // A re-render of #view replaces the container. If the map's old container
+    // is no longer attached, rebuild; otherwise just refresh the data.
+    if (map){
+      if (map.getContainer().isConnected){ refreshMapData(); return; }
+      disposeMap();
+    }
+    var status = $("#map-status");
+    mapTipEl = $("#map-tip");
+
+    if (!worldTopo){
+      fetch(WORLD_TOPO_URL).then(function(r){ return r.ok ? r.json() : Promise.reject(new Error("topo")); })
+        .then(function(t){ worldTopo = t; buildMap(); })
+        .catch(function(){ if (status) status.textContent = "Geometry offline — SVG map shown below."; });
+    } else {
+      buildMap();
+    }
+
+    function buildMap(){
+      var statusEl = $("#map-status");
+      try {
+        var world = topojson.feature(worldTopo, worldTopo.objects.countries);
+        world.features.forEach(function(f){ f.id = Number(f.id) || 0; });
+
+        // MapLibre paint expressions need concrete colours — resolve the
+        // board's CSS variables once so the map follows both themes.
+        var C = {
+          off: cssVar("--map-off"), line: cssVar("--map-line"),
+          on: cssVar("--map-on"), accent: cssVar("--accent"),
+          muted: cssVar("--muted"), surface: cssVar("--surface"),
+          ink2: cssVar("--ink-2"),
+        };
+
+        map = new maplibregl.Map({
+          container: "interactive-map",
+          style: { version: 8, sources: {}, layers: [
+            { id: "bg", type: "background", paint: { "background-color": C.off } }
+          ]},
+          center: [10, 50], zoom: 3.2, attributionControl: false,
+          dragRotate: false, pitchWithRotate: false,
+        });
+        map.touchZoomRotate.disableRotation();
+        map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
+        map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-left");
+
+        map.on("load", function(){
+          map.addSource("world", { type: "geojson", data: world });
+          map.addLayer({ id: "world-fill", type: "fill", source: "world",
+            paint: { "fill-color": C.off, "fill-opacity": 0.95 } });
+          map.addLayer({ id: "world-line", type: "line", source: "world",
+            paint: { "line-color": C.line, "line-width": 0.5 } });
+
+          // Venue-count choropleth (country tint = at least one venue)
+          map.addSource("venue-country", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+          map.addLayer({ id: "vc-fill", type: "fill", source: "venue-country",
+            paint: {
+              "fill-color": ["get", "fill"],
+              "fill-opacity": ["case", ["boolean", ["feature-state", "hover"], false], 0.95, 0.75],
+            }});
+          map.addLayer({ id: "vc-line", type: "line", source: "venue-country",
+            paint: { "line-color": C.line, "line-width": 0.7 } });
+
+          // Venue dots (client = accent, prospect = outline)
+          map.addSource("pins", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+          map.addLayer({ id: "pins-glow", type: "circle", source: "pins",
+            paint: {
+              "circle-radius": ["+", 6, ["*", 2.1, ["sqrt", ["get", "r"]]]],
+              "circle-color": ["case", ["==", ["get", "client"], 1], C.accent, C.muted],
+              "circle-opacity": 0.15, "circle-blur": 0.7,
+            }});
+          map.addLayer({ id: "pins-core", type: "circle", source: "pins",
+            paint: {
+              "circle-radius": ["+", 2, ["*", 0.95, ["sqrt", ["get", "r"]]]],
+              "circle-color": ["case", ["==", ["get", "client"], 1], C.accent, C.surface],
+              "circle-stroke-color": ["case", ["==", ["get", "client"], 1], C.accent, C.muted],
+              "circle-stroke-width": 1.6,
+            }});
+          map.addLayer({ id: "pins-label", type: "symbol", source: "pins", minzoom: 6,
+            layout: {
+              "text-field": ["get", "name"], "text-size": 10.5,
+              "text-offset": [0, 1.4], "text-anchor": "top",
+              "text-allow-overlap": false, "text-optional": true,
+            },
+            paint: { "text-color": C.ink2, "text-halo-color": C.surface, "text-halo-width": 1.4 } });
+
+          wireMapEvents();
+          refreshMapData();
+          fitRegion(ui.map || "europe");
+          if (statusEl) statusEl.textContent = "";
+          mapReady = true;
+        });
+      } catch (e) {
+        if (statusEl) statusEl.textContent = "Map failed: " + (e && e.message ? e.message : e);
+        console.error("interactive map error", e);
+      }
+    }
+  }
+
+  function refreshMapData(){
+    if (!map || !map.isStyleLoaded()) return;
+    // Choropleth: country fill = map-on when it holds ≥1 venue
+    var onFill = cssVar("--map-on");
+    var byCountry = {};
+    state.venues.forEach(function(v){ if (v.lat!=null && v.lon!=null) byCountry[v.country] = (byCountry[v.country]||0)+1; });
+    var world = topojson.feature(worldTopo, worldTopo.objects.countries);
+    var vc = world.features.filter(function(f){
+      var iso = ISO_NUM[f.id];
+      return iso && byCountry[iso];
+    }).map(function(f){
+      return {
+        type: "Feature",
+        properties: { fill: onFill, count: byCountry[ISO_NUM[f.id]] },
+        geometry: f.geometry,
+      };
+    });
+    map.getSource("venue-country").setData({ type: "FeatureCollection", features: vc });
+
+    // Pins
+    var pins = state.venues.filter(function(v){ return v.lat!=null && v.lon!=null; }).map(function(v){
+      return {
+        type: "Feature",
+        properties: {
+          id: v.id, name: v.name, city: v.city, country: v.country,
+          client: v.segment==="client" ? 1 : 0,
+          r: v.tier==="flagship" ? 7 : v.tier==="mid" ? 5.5 : 4.5,
+          stage: STAGEMAP[v.stage] ? STAGEMAP[v.stage].n : v.stage,
+          stagec: STAGEMAP[v.stage] ? STAGEMAP[v.stage].c : "#8E8397",
+          value: money(v.value),
+        },
+        geometry: { type: "Point", coordinates: [v.lon, v.lat] },
+      };
+    });
+    map.getSource("pins").setData({ type: "FeatureCollection", features: pins });
+  }
+
+  function fitRegion(k){
+    if (!map || !REGION_BOUNDS[k]) return;
+    map.fitBounds(REGION_BOUNDS[k], { padding: 24, duration: 700 });
+  }
+
+  function wireMapEvents(){
+    if (!map) return;
+    map.on("mousemove", "vc-fill", function(e){
+      map.getCanvas().style.cursor = "pointer";
+      if (mapHoverId !== null) map.setFeatureState({ source: "venue-country", id: mapHoverId }, { hover: false });
+      mapHoverId = e.features[0].id;
+      map.setFeatureState({ source: "venue-country", id: mapHoverId }, { hover: true });
+    });
+    map.on("mouseleave", "vc-fill", function(){
+      map.getCanvas().style.cursor = "";
+      if (mapHoverId !== null){ map.setFeatureState({ source: "venue-country", id: mapHoverId }, { hover: false }); mapHoverId = null; }
+    });
+
+    map.on("mousemove", "pins-core", function(e){
+      map.getCanvas().style.cursor = "pointer";
+      var f = e.features[0];
+      var st = { color: f.properties.stagec, name: f.properties.stage };
+      if (mapTipEl){
+        mapTipEl.innerHTML = "<b>"+esc(f.properties.name)+"</b>"+
+          esc(f.properties.city+", "+f.properties.country)+
+          " <span class=\"t\" style=\"background:"+st.color+"22;color:"+st.color+"\">"+esc(st.name)+"</span>"+
+          " · "+esc(f.properties.value);
+        mapTipEl.style.display = "block";
+        var box = $("#imapbox").getBoundingClientRect();
+        mapTipEl.style.left = Math.min(e.point.x+14, box.width-250) + "px";
+        mapTipEl.style.top = (e.point.y+10) + "px";
+      }
+    });
+    map.on("mouseleave", "pins-core", function(){
+      map.getCanvas().style.cursor = "";
+      if (mapTipEl) mapTipEl.style.display = "none";
+    });
+
+    map.on("click", "pins-core", function(e){
+      var id = e.features[0].properties.id;
+      ui.sel = (ui.sel===id) ? null : id;
+      var co = $("#mapcallout");
+      if (co) co.innerHTML = mapCalloutHTML();
+    });
+  }
+
+  function disposeMap(){
+    if (map){ try{ map.remove(); }catch(e){} map = null; mapReady = false; mapHoverId = null; }
   }
 
   function viewTerritory(){
@@ -2737,12 +2992,14 @@
     var v = VIEWS.filter(function(z){ return z.k===ui.view; })[0] || VIEWS[0];
     $("#view").innerHTML = v.f();
     $("#regionlist").innerHTML = regions().map(function(r){ return '<option value="'+esc(r)+'"></option>'; }).join("");
+    if (ui.view === "territory") initInteractiveMap();
   }
 
   /* ---------- events ---------- */
   $("#tabs").addEventListener("click", function(e){
     var b=e.target.closest("button[data-view]"); if(!b) return;
     ui.view=b.dataset.view; render();
+    if (ui.view !== "territory") disposeMap();
     window.scrollTo({top:0, behavior:"smooth"});
   });
 
@@ -2751,7 +3008,17 @@
     var fk=e.target.closest("#funnelkey button[data-stage]");
     if (fk){ ui.stage = (ui.stage===fk.dataset.stage)?"":fk.dataset.stage; render(); return; }
     var mb=e.target.closest("button[data-map]");
-    if (mb){ ui.map=mb.dataset.map; ui.sel=null; render(); return; }
+    if (mb){
+      ui.map=mb.dataset.map; ui.sel=null;
+      if (map && map.getContainer().isConnected){
+        // Interactive mode: just refit + refresh, keep the map instance.
+        fitRegion(ui.map);
+        render();
+      } else {
+        render();
+      }
+      return;
+    }
     var pin=e.target.closest("[data-pin]");
     if (pin){ ui.sel = (ui.sel===pin.dataset.pin) ? null : pin.dataset.pin; render(); return; }
     if (!t) return;

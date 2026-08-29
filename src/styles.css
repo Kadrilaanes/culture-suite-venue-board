@@ -249,7 +249,24 @@
   .maplegend span{display:flex;align-items:center;gap:6px;}
   .maplegend .lg{width:9px;height:9px;border-radius:50%;background:var(--line-2);border:1px solid var(--muted);display:block;}
   .maplegend .lg.client{background:var(--accent);border-color:var(--accent);}
-  .mapbox{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px;overflow:hidden;margin:0 auto;}
+  .mapbox{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px;overflow:hidden;margin:0 auto;position:relative;}
+  .maplibregl-map{font-family:var(--sans);}
+  #interactive-map{width:100%;height:440px;border-radius:8px;overflow:hidden;}
+  @media (max-width:640px){ #interactive-map{height:360px;} }
+  .maplibregl-canvas:focus{outline:none;}
+  .maplibregl-ctrl-attrib{font-family:var(--mono);font-size:9px!important;}
+  .maplibregl-ctrl-group{background:var(--surface)!important;border:1px solid var(--line-2)!important;}
+  .maplibregl-ctrl-group button{background:transparent!important;}
+  .maplibregl-ctrl-group button span{filter:invert(0.5);}
+  #map-tip{
+    position:absolute;z-index:5;pointer-events:none;display:none;
+    background:var(--surface);border:1px solid var(--line-2);border-radius:8px;
+    box-shadow:var(--shadow);padding:8px 10px;min-width:150px;max-width:240px;
+    font-family:var(--mono);font-size:11px;line-height:1.45;color:var(--ink-2);
+  }
+  #map-tip b{display:block;color:var(--ink);font-family:var(--sans);font-size:12.5px;margin-bottom:2px;}
+  #map-tip .t{display:inline-block;margin-top:3px;padding:1px 7px;border-radius:999px;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;}
+  .map-status{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-top:8px;text-align:center;}
   svg.map{display:block;width:100%;height:auto;}
   svg.map .cty{fill:var(--map-off);stroke:var(--map-line);stroke-width:.7;vector-effect:non-scaling-stroke;}
   svg.map .cty.on{fill:var(--map-on);stroke:var(--map-line);}
