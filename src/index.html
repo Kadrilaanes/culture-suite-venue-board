@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="styles.css">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css" rel="stylesheet">
 </head>
 <body>
 <div class="gate" id="gate">
@@ -46,6 +47,8 @@
     <b>About the seed data.</b> Venue names, cities and classes are real and researched; every commercial field — licence value, stage, owner, next step, notes — is a placeholder for you to set. Values default to indicative bands by venue scale (flagship £18k, mid-scale £11k, small £6.5k annual) purely so the forecast maths has something to chew on. The Intel Feed is a manual log: a published page can't fetch news on its own, so entries go in by hand or by a refresh I run for you.
   </footer>
 </div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

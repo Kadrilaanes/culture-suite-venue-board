@@ -513,27 +513,208 @@
   }
   function radius(t){ return t==="flagship" ? 7 : t==="mid" ? 5.5 : 4.5; }
 
-  function mapHTML(){
-    if (!MAPS) return "";
-    var placed = {europe:[], na:[]}, offmap = [];
-    state.venues.forEach(function(x){
-      var k = mapOf(x);
-      if (k) placed[k].push(x); else offmap.push(x);
-    });
-    var keys = Object.keys(placed).filter(function(k){ return placed[k].length; });
-    if (!keys.length) return "";
-    if (keys.indexOf(ui.map) === -1) ui.map = keys[0];
-    var m = MAPS[ui.map];
-    var here = placed[ui.map];
+  /* ---- interactive map (MapLibre, tracker-style) ---- */
+  var iMap = null, worldTopo = null, mapReady = false, mapHoverId = null;
+  var ISO2NUM = {UK:826, NL:528, DE:276, BE:56, DK:208, EE:233, FI:246, IE:372,
+                 IS:352, LT:440, LV:428, NO:578, SE:752, US:840};
+  var NUM2ISO = {}; Object.keys(ISO2NUM).forEach(function(k){ NUM2ISO[ISO2NUM[k]]=k; });
+  var BOUNDS = {
+    europe: [[-14, 46], [32, 72]],
+    na: [[-130, 24], [-55, 52]]
+  };
 
+  function cssVar(n){
+    try{ return getComputedStyle(document.body).getPropertyValue(n).trim() || ""; }catch(e){ return ""; }
+  }
+
+  function calloutHTML(sel){
+    if (!sel) return "";
+    var x = find(sel); if (!x) return "";
+    var st = STAGEMAP[x.stage]||STAGES[0];
+    return '<div class="callout" style="--stage-c:'+st.c+'">'+
+      '<div><b>'+esc(x.name)+'</b><span>'+esc(x.cls+" · "+x.city+", "+x.country)+'</span></div>'+
+      '<div class="callout-r"><span class="stage-pill" style="--stage-bg:'+st.bg+'">'+esc(st.n)+'</span>'+
+      '<b class="cmoney">'+esc(money(x.value))+'</b></div></div>';
+  }
+
+  function venueGeoJSON(){
+    var feats = state.venues.filter(function(x){ return x.lat!=null && x.lon!=null && !isNaN(x.lat) && !isNaN(x.lon); })
+      .map(function(x){
+        return {type:"Feature", properties:{
+          id:x.id, name:x.name, city:x.city, country:x.country, cls:x.cls,
+          tier:x.tier, segment:x.segment, stage:x.stage, value:x.value
+        }, geometry:{type:"Point", coordinates:[Number(x.lon), Number(x.lat)]}};
+      });
+    return {type:"FeatureCollection", features:feats};
+  }
+
+  function fitVenues(){
+    if (!iMap || !mapReady) return;
+    var bounds = BOUNDS[ui.map] || BOUNDS.europe;
+    try{ iMap.fitBounds(bounds, {padding:24, duration:0}); }catch(e){}
+  }
+
+  function mapTip(){
+    var t = document.getElementById("imap-tip");
+    if (!t){
+      t = document.createElement("div");
+      t.id = "imap-tip"; t.className = "imap-tip"; t.style.display = "none";
+      document.body.appendChild(t);
+    }
+    return t;
+  }
+
+  function initInteractiveMap(){
+    if (iMap || !window.maplibregl || !window.topojson) return;
+    var host = document.getElementById("imap");
+    if (!host) return;
+
+    var accent = cssVar("--accent") || "#8A2749";
+    var brass  = cssVar("--brass") || "#9B6F33";
+    var ground = cssVar("--ground") || "#FAF7F2";
+    var line   = cssVar("--line-2") || "#D6CCD4";
+    var ink    = cssVar("--ink") || "#1A1420";
+
+    (function load(){
+      if (worldTopo){ build(); return; }
+      fetch("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json")
+        .then(function(r){ if(!r.ok) throw 0; return r.json(); })
+        .then(function(j){ worldTopo = j; build(); })
+        .catch(function(){ host.innerHTML = '<p class="offmap">Map geometry failed to load — the venue list below still works.</p>'; });
+    })();
+
+    function build(){
+      try{
+        var world = topojson.feature(worldTopo, worldTopo.objects.countries);
+        world.features.forEach(function(f){
+          f.id = Number(f.id) || 0;
+          var code = NUM2ISO[f.id];
+          f.properties.count = 0;
+          state.venues.forEach(function(v){ if (v.country === code) f.properties.count++; });
+          f.properties.tint = f.properties.count > 0 ? accent : "rgba(0,0,0,0)";
+        });
+
+        iMap = new maplibregl.Map({
+          container: host,
+          style: {version:8, sources:{}, layers:[{id:"bg", type:"background", paint:{"background-color":ground}}]},
+          center:[4.9, 52.37], zoom:3.2, attributionControl:false,
+          dragRotate:false, pitchWithRotate:false,
+        });
+        iMap.touchZoomRotate.disableRotation();
+        iMap.addControl(new maplibregl.NavigationControl({showCompass:false}), "bottom-right");
+        if (typeof iMap.attributionControl !== "undefined" && iMap.attributionControl) iMap.attributionControl.remove();
+
+        iMap.on("load", function(){
+          iMap.addSource("world", {type:"geojson", data:world});
+          iMap.addLayer({id:"world-fill", type:"fill", source:"world",
+            paint:{"fill-color":["get","tint"], "fill-opacity":["case",["boolean",["feature-state","hover"],false],0.9,0.6]}});
+          iMap.addLayer({id:"world-line", type:"line", source:"world",
+            paint:{"line-color":line, "line-width":0.5}});
+
+          iMap.addSource("venues", {type:"geojson", data:venueGeoJSON()});
+          iMap.addLayer({id:"ven-glow", type:"circle", source:"venues",
+            paint:{"circle-radius":["+",7,["*",3,["case",["==",["get","tier"],"flagship"],1,["==",["get","tier"],"mid"],0.6,0.4]]],
+                   "circle-color":accent, "circle-opacity":0.15, "circle-blur":0.7}});
+          iMap.addLayer({id:"ven-dot", type:"circle", source:"venues",
+            paint:{"circle-radius":["case",["==",["get","tier"],"flagship"],8,["==",["get","tier"],"mid"],6,4.5],
+                   "circle-color":["case",["==",["get","segment"],"client"],brass,accent],
+                   "circle-stroke-color":ground, "circle-stroke-width":1.2,
+                   "circle-opacity":["case",["boolean",["feature-state","hover"],false],1,0.92]}});
+
+          mapReady = true;
+          fitVenues();
+
+          var tip = mapTip();
+          iMap.on("mousemove", "ven-dot", function(e){
+            iMap.getCanvas().style.cursor = "pointer";
+            var f = e.features[0];
+            if (mapHoverId !== null) iMap.setFeatureState({source:"venues", id:mapHoverId}, {hover:false});
+            mapHoverId = f.id;
+            iMap.setFeatureState({source:"venues", id:mapHoverId}, {hover:true});
+            var st = STAGEMAP[f.properties.stage]||STAGES[0];
+            tip.innerHTML = "<b>"+esc(f.properties.name)+"</b><span>"+esc(f.properties.city+", "+f.properties.country)+" · "+esc(st.n)+" · "+esc(money(f.properties.value))+"</span>";
+            tip.style.display = "block";
+            var rect = host.getBoundingClientRect();
+            tip.style.left = Math.min(e.point.x + 14, rect.width - 240) + "px";
+            tip.style.top = (e.point.y + 10) + "px";
+          });
+          iMap.on("mouseleave", "ven-dot", function(){
+            iMap.getCanvas().style.cursor = "";
+            if (mapHoverId !== null) iMap.setFeatureState({source:"venues", id:mapHoverId}, {hover:false});
+            mapHoverId = null;
+            tip.style.display = "none";
+          });
+          iMap.on("click", "ven-dot", function(e){
+            var id = e.features[0].properties.id;
+            ui.sel = (ui.sel === id) ? null : id;
+            var call = document.getElementById("imap-callout");
+            if (call) call.innerHTML = calloutHTML(ui.sel);
+            var v = find(id);
+            if (v && v.lat != null && v.lon != null){
+              iMap.flyTo({center:[Number(v.lon), Number(v.lat)], zoom:5.2, duration:1100});
+            }
+          });
+          iMap.on("click", "world-fill", function(e){
+            var code = NUM2ISO[Number(e.features[0].id)] || null;
+            if (!code) return;
+            var names = state.venues.filter(function(v){ return v.country === code; }).map(function(v){ return v.name; });
+            if (!names.length) return;
+            var call = document.getElementById("imap-callout");
+            if (call) call.innerHTML = '<div class="callout"><div><b>'+esc(code)+'</b><span>'+names.length+' venue'+(names.length===1?"":"s")+'</span></div><div class="callout-r"><span class="stage-pill">'+esc(names.slice(0,3).join(", "))+(names.length>3?"…":"")+'</span></div></div>';
+          });
+        });
+      }catch(e){
+        host.innerHTML = '<p class="offmap">Map unavailable ('+esc(e.message||"error")+') — venue list below still works.</p>';
+      }
+    }
+  }
+
+  function teardownMap(){
+    if (iMap){ try{ iMap.remove(); }catch(e){} iMap = null; mapReady = false; mapHoverId = null; }
+  }
+
+  function mapHTML(){
+    if (!MAPS && !window.maplibregl) return "";
+
+    var placed = state.venues.filter(function(x){ return x.lat!=null && x.lon!=null && !isNaN(x.lat) && !isNaN(x.lon); });
+    var offmap = state.venues.length - placed.length;
+    var keys = [];
+    if (MAPS){ placed.forEach(function(x){ var k=mapOf(x); if (k && keys.indexOf(k)===-1) keys.push(k); }); }
+    if (!keys.length) keys = ["europe"];
+    if (keys.indexOf(ui.map) === -1) ui.map = keys[0];
+
+    var switcher = keys.length>1 ? '<div class="mapswitch">'+keys.map(function(k){
+      return '<button type="button" class="btn mini" data-map="'+k+'" aria-pressed="'+(ui.map===k)+'">'+
+        esc(MAPMETA[k].n)+' <span class="n">'+placed.filter(function(x){return mapOf(x)===k;}).length+'</span></button>';
+    }).join("")+'</div>' : "";
+
+    var legend = '<div class="maplegend">'+
+      '<span><i class="lg client"></i>Existing client</span>'+
+      '<span><i class="lg"></i>Net-new prospect</span>'+
+      '<span class="lgsize">Dot size = venue scale · hover a dot, click to zoom</span>'+
+    '</div>';
+
+    var head = '<div class="maphead">'+switcher+legend+'</div>';
+
+    // Interactive (MapLibre available)
+    if (window.maplibregl && window.topojson){
+      return head +
+        '<div class="imap" id="imap" role="application" aria-label="Interactive venue map"></div>' +
+        '<div id="imap-callout">'+calloutHTML(ui.sel)+'</div>' +
+        (offmap ? '<p class="offmap">'+offmap+' venue'+(offmap===1?"":"s")+
+          ' not on the map yet — add a latitude and longitude on the venue to place '+(offmap===1?"it":"them")+'.</p>' : "");
+    }
+
+    // Fallback: static SVG (no MapLibre — offline/CDN blocked)
+    if (!MAPS) return "";
+    var m = MAPS[ui.map];
+    var here = placed.filter(function(x){ return mapOf(x)===ui.map; });
     var withVenue = {};
     here.forEach(function(x){ withVenue[x.country] = 1; });
-
     var land = m.feats.map(function(f){
       return '<path d="'+f.d+'" class="cty'+(f.n && withVenue[f.n] ? " on" : "")+'"/>';
     }).join("");
 
-    // Venues in the same town land on the same point — fan them out so each is clickable.
     var at = {}, pos = {};
     here.forEach(function(x){
       var p = project(m, x.lat, x.lon);
@@ -572,34 +753,14 @@
         '</g>';
     }).join("");
 
-    var switcher = keys.length>1 ? '<div class="mapswitch">'+keys.map(function(k){
-      return '<button type="button" class="btn mini" data-map="'+k+'" aria-pressed="'+(ui.map===k)+'">'+
-        esc(MAPMETA[k].n)+' <span class="n">'+placed[k].length+'</span></button>';
-    }).join("")+'</div>' : "";
-
-    var sel = ui.sel ? find(ui.sel) : null;
-    var callout = "";
-    if (sel){
-      var st = STAGEMAP[sel.stage]||STAGES[0];
-      callout = '<div class="callout" style="--stage-c:'+st.c+'">'+
-        '<div><b>'+esc(sel.name)+'</b><span>'+esc(sel.cls+" · "+sel.city+", "+sel.country)+'</span></div>'+
-        '<div class="callout-r"><span class="stage-pill" style="--stage-bg:'+st.bg+'">'+esc(st.n)+'</span>'+
-        '<b class="cmoney">'+esc(money(sel.value))+'</b></div></div>';
-    }
-
     var cap = Math.round(560 * m.w / m.h);
-    return '<div class="maphead">'+switcher+
-      '<div class="maplegend">'+
-        '<span><i class="lg client"></i>Existing client</span>'+
-        '<span><i class="lg"></i>Net-new prospect</span>'+
-        '<span class="lgsize">Dot size = venue scale</span>'+
-      '</div></div>'+
+    return head +
       '<div class="mapbox" style="max-width:min(100%,'+cap+'px)"><svg class="map" viewBox="0 0 '+m.w+' '+m.h+'" role="img" '+
         'aria-label="Venue locations across '+esc(MAPMETA[ui.map].n)+'">'+
         '<g class="land">'+land+'</g><g class="pins">'+pins+'</g></svg></div>'+
-      callout+
-      (offmap.length ? '<p class="offmap">'+offmap.length+' venue'+(offmap.length===1?"":"s")+
-        ' not on the map yet — add a latitude and longitude on the venue to place '+(offmap.length===1?"it":"them")+'.</p>' : "");
+      calloutHTML(ui.sel)+
+      (offmap ? '<p class="offmap">'+offmap+' venue'+(offmap===1?"":"s")+
+        ' not on the map yet — add a latitude and longitude on the venue to place '+(offmap===1?"it":"them")+'.</p>' : "");
   }
 
   function viewTerritory(){
@@ -653,8 +814,14 @@
   function render(){
     renderTabs();
     var v = VIEWS.filter(function(z){ return z.k===ui.view; })[0] || VIEWS[0];
+    $("body").dataset.view = ui.view;
     $("#view").innerHTML = v.f();
     $("#regionlist").innerHTML = regions().map(function(r){ return '<option value="'+esc(r)+'"></option>'; }).join("");
+    if (ui.view === "territory"){
+      setTimeout(function(){ initInteractiveMap(); }, 60);
+    } else {
+      teardownMap();
+    }
   }
 
   /* ---------- events ---------- */
@@ -669,7 +836,7 @@
     var fk=e.target.closest("#funnelkey button[data-stage]");
     if (fk){ ui.stage = (ui.stage===fk.dataset.stage)?"":fk.dataset.stage; render(); return; }
     var mb=e.target.closest("button[data-map]");
-    if (mb){ ui.map=mb.dataset.map; ui.sel=null; render(); return; }
+    if (mb){ ui.map=mb.dataset.map; ui.sel=null; render(); if (iMap && mapReady){ setTimeout(fitVenues, 50); } return; }
     var pin=e.target.closest("[data-pin]");
     if (pin){ ui.sel = (ui.sel===pin.dataset.pin) ? null : pin.dataset.pin; render(); return; }
     if (!t) return;
