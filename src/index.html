@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Culture Suite Venue Board</title>
+<meta name="description" content="Website licence pipeline for ticketed cultural venues.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="marquee">
+    <div>
+      <div class="brandline">Culture Suite · Website licence pipeline</div>
+      <h1>Venue Board</h1>
+      <p class="sub">Every venue we can put a Culture Suite website licence in front of — the universe, the live deals, the fifteen to move this month, and everything we've heard.</p>
+    </div>
+    <div class="headtools">
+      <span class="chip" id="savechip" data-state="idle">Loading</span>
+      <button class="btn" id="csv" hidden>Export CSV</button>
+      <button class="btn primary" id="add">+ Venue</button>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs" role="tablist"></nav>
+  <div class="ro-banner">You're viewing this board read-only, so edits won't be saved for others.</div>
+  <datalist id="regionlist"></datalist>
+  <main id="view"></main>
+
+  <footer class="note">
+    <b>About the seed data.</b> Venue names, cities and classes are real and researched; every commercial field — licence value, stage, owner, next step, notes — is a placeholder for you to set. Values default to indicative bands by venue scale (flagship £18k, mid-scale £11k, small £6.5k annual) purely so the forecast maths has something to chew on. The Intel Feed is a manual log: a published page can't fetch news on its own, so entries go in by hand or by a refresh I run for you.
+  </footer>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "name": "culture-suite-venue-board",
+  "version": "1.0.0",
+  "description": "Website licence pipeline board for ticketed cultural venues — venues, leads, priority board, intel feed and a tile-free territory map.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "npx --yes serve src -l 5173",
+    "build": "node tools/build-single.mjs",
+    "build:maps": "node tools/build-maps.mjs && node tools/build-single.mjs"
+  },
+  "devDependencies": {
+    "d3-geo": "^3.1.1",
+    "topojson-client": "^3.1.0",
+    "world-atlas": "^2.0.2"
+  }
+}
